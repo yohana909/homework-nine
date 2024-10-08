@@ -275,6 +275,66 @@ const handleDeleteHistoryClick = (event: any) => {
   const cityID = JSON.parse(event.target.getAttribute('data-city')).id;
   deleteCityFromHistory(cityID).then(getAndRenderHistory);
 };
+const express = require('express');
+const fs = require('fs');
+const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
+const app = express();
+const port = process.env.PORT || 3000;
+const apiKey = process.env.OPENWEATHER_API_KEY; // Store this in Render environment
+
+app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html');
+});
+
+app.get('/api/weather/history', (req, res) => {
+  fs.readFile('searchHistory.json', 'utf8', (err, data) => {
+    if (err) return res.status(500).json({ error: 'Could not read history.' });
+    res.json(JSON.parse(data));
+  });
+});
+
+app.post('/api/weather', async (req, res) => {
+  const { city } = req.body;
+  if (!city) return res.status(400).json({ error: 'City name is required' });
+
+  try {
+    const geoResponse = await axios.get(`http://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${apiKey}`);
+    const { lat, lon } = geoResponse.data[0];
+
+    const weatherResponse = await axios.get(`https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly&appid=${apiKey}`);
+    const weatherData = weatherResponse.data;
+
+    const newCity = { id: uuidv4(), city, weatherData };
+
+    fs.readFile('searchHistory.json', 'utf8', (err, data) => {
+      const history = err ? [] : JSON.parse(data);
+      history.push(newCity);
+      fs.writeFile('searchHistory.json', JSON.stringify(history), (err) => {
+        if (err) return res.status(500).json({ error: 'Could not save city.' });
+        res.json(newCity);
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching weather data.' });
+  }
+});
+
+app.delete('/api/weather/history/:id', (req, res) => {
+  const { id } = req.params;
+  fs.readFile('searchHistory.json', 'utf8', (err, data) => {
+    if (err) return res.status(500).json({ error: 'Could not read history.' });
+    const history = JSON.parse(data).filter(city => city.id !== id);
+    fs.writeFile('searchHistory.json', JSON.stringify(history), (err) => {
+      if (err) return res.status(500).json({ error: 'Could not delete city.' });
+      res.json({ message: 'City deleted successfully.' });
+    });
+  });
+});
+
+app.listen(port, () => console.log(`Server running on port ${
 
 /*
 
